@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Background Music</title>
+<style>
+  :root{
+    --amber:#f5b942;
+    --text:#f3f4f6;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    height:100%;
+    margin:0;
+    overflow:hidden;
+    background:#0b0b0d;
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  body.cursor-hidden{ cursor:none; }
+
+  /* ---- background slideshow ---- */
+  .bg-layer{
+    position:fixed;
+    inset:0;
+    background-size:cover;
+    background-position:center;
+    background-repeat:no-repeat;
+    opacity:0;
+    transition:opacity 3s ease;
+    z-index:0;
+  }
+  .bg-layer.active{ opacity:1; }
+
+  .bg-empty{
+    position:fixed;
+    inset:0;
+    z-index:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    color:#55565c;
+    font-size:14px;
+    letter-spacing:.5px;
+    padding:40px;
+    background:radial-gradient(ellipse at 50% 40%, #17181c 0%, #0b0b0d 70%);
+  }
+
+  /* subtle darkening so controls stay legible on any image */
+  .scrim{
+    position:fixed;
+    inset:0;
+    z-index:1;
+    background:linear-gradient(to top, rgba(0,0,0,.45) 0%, rgba(0,0,0,0) 22%);
+    pointer-events:none;
+  }
+
+  /* ---- controls ---- */
+  .controls{
+    position:fixed;
+    left:50%;
+    bottom:34px;
+    transform:translate(-50%, 0);
+    z-index:2;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:10px 14px;
+    border-radius:999px;
+    background:rgba(20,20,24,.55);
+    border:1px solid rgba(255,255,255,.1);
+    backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);
+    box-shadow:0 10px 30px -10px rgba(0,0,0,.5);
+    transition:opacity .5s ease, transform .5s ease;
+    opacity:1;
+  }
+  .controls.hidden{
+    opacity:0;
+    transform:translate(-50%, 8px);
+    pointer-events:none;
+  }
+
+  .play-btn{
+    width:46px;
+    height:46px;
+    border-radius:50%;
+    border:none;
+    background:var(--amber);
+    color:#1a1206;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    flex-shrink:0;
+    transition:filter .15s ease, transform .05s ease;
+  }
+  .play-btn:hover{ filter:brightness(1.08); }
+  .play-btn:active{ transform:scale(.94); }
+  .play-btn svg{ width:20px; height:20px; }
+
+  .track-select-wrap{
+    position:relative;
+    display:flex;
+    align-items:center;
+  }
+  select{
+    appearance:none;
+    -webkit-appearance:none;
+    background:transparent;
+    border:none;
+    color:var(--text);
+    font-size:14px;
+    font-family:inherit;
+    padding:6px 26px 6px 4px;
+    max-width:220px;
+    cursor:pointer;
+    outline:none;
+  }
+  select option{
+    background:#1c1d22;
+    color:var(--text);
+  }
+  .select-chevron{
+    position:absolute;
+    right:2px;
+    pointer-events:none;
+    width:14px;
+    height:14px;
+    color:#9a9ba3;
+  }
+</style>
+</head>
+<body>
+
+<div id="bgEmpty" class="bg-empty">No images loaded yet.<br>Add files to /images and list them in the IMAGES array.</div>
+<div id="bgA" class="bg-layer"></div>
+<div id="bgB" class="bg-layer"></div>
+<div class="scrim"></div>
+
+<div class="controls" id="controls">
+  <button class="play-btn" id="playBtn" title="Play / Pause">
+    <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+  </button>
+  <div class="track-select-wrap">
+    <select id="trackSelect"></select>
+    <svg class="select-chevron" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
+  </div>
+</div>
+
+<audio id="player" preload="none"></audio>
+
+<script>
+/* ============================================================
+   TRACK LIST — edit to add / remove / rename background music.
+   `file` is the path relative to this HTML file (the /music folder).
+   ============================================================ */
+const TRACKS = [
+  // { title: "Warm Up Loop",  file: "music/warm-up-loop.mp3" },
+  // { title: "Walk-In Theme", file: "music/walk-in-theme.mp3" },
+  // { title: "Intermission",  file: "music/intermission.mp3" },
+];
+
+/* ============================================================
+   IMAGE LIST — 15 (or however many) background images.
+   Paths are relative to this HTML file (the /images folder).
+   They loop in order and gently crossfade.
+   ============================================================ */
+const IMAGES = [
+  // "images/slide-01.jpg",
+  // "images/slide-02.jpg",
+  // "images/slide-03.jpg",
+  // ...add up to 15
+];
+
+const SLIDE_DISPLAY_MS = 8000; // how long each image stays fully visible before crossfading
+
+/* ============================================================ */
+
+const player = document.getElementById('player');
+const playBtn = document.getElementById('playBtn');
+const playIcon = document.getElementById('playIcon');
+const trackSelect = document.getElementById('trackSelect');
+const controls = document.getElementById('controls');
+const bgA = document.getElementById('bgA');
+const bgB = document.getElementById('bgB');
+const bgEmpty = document.getElementById('bgEmpty');
+
+const ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
+const ICON_PAUSE = '<path d="M6 5h4v14H6zm8 0h4v14h-4z"/>';
+
+let currentIndex = -1;
+
+/* ---------------- music ---------------- */
+
+function buildTrackSelect(){
+  trackSelect.innerHTML = '';
+  if(TRACKS.length === 0){
+    const opt = document.createElement('option');
+    opt.textContent = 'No tracks loaded';
+    trackSelect.appendChild(opt);
+    trackSelect.disabled = true;
+    playBtn.disabled = true;
+    return;
+  }
+  TRACKS.forEach((t, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = t.title;
+    trackSelect.appendChild(opt);
+  });
+}
+
+function loadTrack(i, autoplay){
+  if(i < 0 || i >= TRACKS.length) return;
+  currentIndex = i;
+  const t = TRACKS[i];
+  player.src = t.file;
+  player.loop = true;
+  trackSelect.value = i;
+  if(autoplay){
+    player.currentTime = 0;
+    player.play().catch(()=>{});
+  }
+}
+
+function togglePlay(){
+  if(TRACKS.length === 0) return;
+  if(currentIndex === -1){
+    loadTrack(0, true);
+    return;
+  }
+  if(player.paused){ player.play().catch(()=>{}); }
+  else{ player.pause(); }
+}
+
+player.addEventListener('play', () => { playIcon.innerHTML = ICON_PAUSE; });
+player.addEventListener('pause', () => { playIcon.innerHTML = ICON_PLAY; });
+
+playBtn.addEventListener('click', () => {
+  togglePlay();
+  resetHideTimer();
+});
+
+trackSelect.addEventListener('change', () => {
+  loadTrack(Number(trackSelect.value), true);
+});
+trackSelect.addEventListener('focus', () => { clearTimeout(hideTimer); });
+trackSelect.addEventListener('blur', () => { resetHideTimer(); });
+
+document.addEventListener('keydown', (e) => {
+  if(e.code === 'Space' && e.target === document.body){
+    e.preventDefault();
+    togglePlay();
+    resetHideTimer();
+  }
+});
+
+/* ---------------- background slideshow ---------------- */
+
+let slideIndex = 0;
+let activeLayer = bgA;
+let inactiveLayer = bgB;
+
+function setupSlideshow(){
+  if(IMAGES.length === 0){
+    bgEmpty.style.display = 'flex';
+    return;
+  }
+  bgEmpty.style.display = 'none';
+
+  activeLayer.style.backgroundImage = `url("${IMAGES[0]}")`;
+  activeLayer.classList.add('active');
+  slideIndex = 0;
+
+  if(IMAGES.length > 1){
+    setInterval(advanceSlide, SLIDE_DISPLAY_MS);
+  }
+}
+
+function advanceSlide(){
+  const nextIndex = (slideIndex + 1) % IMAGES.length;
+  inactiveLayer.style.backgroundImage = `url("${IMAGES[nextIndex]}")`;
+  // force reflow so the browser registers the new background before fading
+  void inactiveLayer.offsetWidth;
+  inactiveLayer.classList.add('active');
+  activeLayer.classList.remove('active');
+
+  const tmp = activeLayer;
+  activeLayer = inactiveLayer;
+  inactiveLayer = tmp;
+  slideIndex = nextIndex;
+}
+
+/* ---------------- auto-hide controls ---------------- */
+
+let hideTimer;
+function resetHideTimer(){
+  clearTimeout(hideTimer);
+  controls.classList.remove('hidden');
+  document.body.classList.remove('cursor-hidden');
+  hideTimer = setTimeout(() => {
+    controls.classList.add('hidden');
+    document.body.classList.add('cursor-hidden');
+  }, 10000);
+}
+
+['mousemove','touchstart','keydown'].forEach(evt => {
+  document.addEventListener(evt, resetHideTimer);
+});
+
+/* ---------------- init ---------------- */
+
+buildTrackSelect();
+setupSlideshow();
+resetHideTimer();
+</script>
+
+</body>
+</html>
