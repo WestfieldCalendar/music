@@ -4,22 +4,44 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Background Music</title>
+
 <style>
   :root{
     --amber:#f5b942;
     --text:#f3f4f6;
   }
-  *{ box-sizing:border-box; }
-  html,body{
+
+  *{
+    box-sizing:border-box;
+  }
+
+  html,
+  body{
     height:100%;
     margin:0;
     overflow:hidden;
     background:#0b0b0d;
     font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
-  body.cursor-hidden{ cursor:none; }
+
+  body.cursor-hidden{
+    cursor:none;
+  }
+
+  /* ---- audio visualizer ---- */
+
+  #visualizer{
+    position:fixed;
+    inset:0;
+    width:100%;
+    height:100%;
+    z-index:0;
+    pointer-events:none;
+    opacity:.34;
+  }
 
   /* ---- background slideshow ---- */
+
   .bg-layer{
     position:fixed;
     inset:0;
@@ -28,14 +50,17 @@
     background-repeat:no-repeat;
     opacity:0;
     transition:opacity 3s ease;
-    z-index:0;
+    z-index:1;
   }
-  .bg-layer.active{ opacity:1; }
+
+  .bg-layer.active{
+    opacity:.84;
+  }
 
   .bg-empty{
     position:fixed;
     inset:0;
-    z-index:0;
+    z-index:1;
     display:flex;
     align-items:center;
     justify-content:center;
@@ -44,31 +69,43 @@
     font-size:14px;
     letter-spacing:.5px;
     padding:40px;
-    background:radial-gradient(ellipse at 50% 40%, #17181c 0%, #0b0b0d 70%);
+    background:radial-gradient(
+      ellipse at 50% 40%,
+      rgba(23,24,28,.72) 0%,
+      rgba(11,11,13,.82) 70%
+    );
   }
 
   /* subtle darkening so controls stay legible on any image */
+
   .scrim{
     position:fixed;
     inset:0;
-    z-index:1;
-    background:linear-gradient(to top, rgba(0,0,0,.45) 0%, rgba(0,0,0,0) 22%);
+    z-index:2;
+    background:
+      linear-gradient(
+        to top,
+        rgba(0,0,0,.52) 0%,
+        rgba(0,0,0,.08) 28%,
+        rgba(0,0,0,0) 60%
+      );
     pointer-events:none;
   }
 
   /* ---- controls ---- */
+
   .controls{
     position:fixed;
     left:50%;
     bottom:34px;
     transform:translate(-50%, 0);
-    z-index:2;
+    z-index:3;
     display:flex;
     align-items:center;
     gap:10px;
-    padding:10px 14px;
+    padding:10px 14px 10px 10px;
     border-radius:999px;
-    background:rgba(20,20,24,.55);
+    background:rgba(20,20,24,.62);
     border:1px solid rgba(255,255,255,.1);
     backdrop-filter:blur(14px);
     -webkit-backdrop-filter:blur(14px);
@@ -76,6 +113,7 @@
     transition:opacity .5s ease, transform .5s ease;
     opacity:1;
   }
+
   .controls.hidden{
     opacity:0;
     transform:translate(-50%, 8px);
@@ -96,15 +134,49 @@
     flex-shrink:0;
     transition:filter .15s ease, transform .05s ease;
   }
-  .play-btn:hover{ filter:brightness(1.08); }
-  .play-btn:active{ transform:scale(.94); }
-  .play-btn svg{ width:20px; height:20px; }
+
+  .play-btn:hover{
+    filter:brightness(1.08);
+  }
+
+  .play-btn:active{
+    transform:scale(.94);
+  }
+
+  .play-btn:disabled{
+    opacity:.5;
+    cursor:not-allowed;
+  }
+
+  .play-btn svg{
+    width:20px;
+    height:20px;
+  }
+
+  .duration-timer{
+    min-width:52px;
+    color:var(--text);
+    font-size:13px;
+    font-variant-numeric:tabular-nums;
+    text-align:center;
+    letter-spacing:.4px;
+    opacity:.82;
+    user-select:none;
+  }
+
+  .control-divider{
+    width:1px;
+    height:24px;
+    background:rgba(255,255,255,.12);
+    flex-shrink:0;
+  }
 
   .track-select-wrap{
     position:relative;
     display:flex;
     align-items:center;
   }
+
   select{
     appearance:none;
     -webkit-appearance:none;
@@ -118,10 +190,12 @@
     cursor:pointer;
     outline:none;
   }
+
   select option{
     background:#1c1d22;
     color:var(--text);
   }
+
   .select-chevron{
     position:absolute;
     right:2px;
@@ -130,135 +204,572 @@
     height:14px;
     color:#9a9ba3;
   }
+
+  @media (max-width:600px){
+    .controls{
+      max-width:calc(100vw - 24px);
+      bottom:20px;
+    }
+
+    select{
+      max-width:150px;
+    }
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    .bg-layer{
+      transition:none;
+    }
+
+    #visualizer{
+      display:none;
+    }
+  }
 </style>
 </head>
+
 <body>
 
-<div id="bgEmpty" class="bg-empty">No images loaded yet.<br>Add files to /images and list them in the IMAGES array.</div>
+<canvas id="visualizer"></canvas>
+
+<div id="bgEmpty" class="bg-empty">
+  No images loaded yet.<br>
+  Add files to /images and list them in the IMAGES array.
+</div>
+
 <div id="bgA" class="bg-layer"></div>
 <div id="bgB" class="bg-layer"></div>
 <div class="scrim"></div>
 
 <div class="controls" id="controls">
-  <button class="play-btn" id="playBtn" title="Play / Pause">
-    <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+  <button
+    class="play-btn"
+    id="playBtn"
+    title="Play / Pause"
+    aria-label="Play"
+  >
+    <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M8 5v14l11-7z"/>
+    </svg>
   </button>
+
+  <div
+    class="duration-timer"
+    id="durationTimer"
+    title="Elapsed playback time"
+    aria-live="off"
+  >
+    00:00
+  </div>
+
+  <div class="control-divider"></div>
+
   <div class="track-select-wrap">
-    <select id="trackSelect"></select>
-    <svg class="select-chevron" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
+    <select id="trackSelect" aria-label="Select an audio source"></select>
+
+    <svg
+      class="select-chevron"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+    >
+      <path d="M7 10l5 5 5-5z"/>
+    </svg>
   </div>
 </div>
 
-<audio id="player" preload="none"></audio>
+<audio
+  id="player"
+  preload="none"
+  crossorigin="anonymous"
+></audio>
 
 <script>
 /* ============================================================
-   TRACK LIST — edit to add / remove / rename background music.
-   `file` is the path relative to this HTML file (the /music folder).
+   TRACK LIST
+
+   type: "file"   = local audio file that loops
+   type: "stream" = live stream that does not loop
    ============================================================ */
+
 const TRACKS = [
-  { title: "Pop Hits 2026",  file: "music/POPHITS.mp3" },
-  { title: "Morning Jazz", file: "music/MORNINGJAZZ.mp3" },
-  { title: "Yacht Rock",  file: "music/YachtRock.mp3" },
-  { title: "Holiday",  file: "music/holiday.mp3" },
-  { title: "Coffee House", file: "music/coffehouse.mp3" },
-  { title: "Vaporwave",  file: "music/vaporwave.mp3" },
+  {
+    title: "Pop Hits 2026",
+    file: "music/POPHITS.mp3",
+    type: "file"
+  },
+  {
+    title: "Morning Jazz",
+    file: "music/MORNINGJAZZ.mp3",
+    type: "file"
+  },
+  {
+    title: "Yacht Rock",
+    file: "music/YachtRock.mp3",
+    type: "file"
+  },
+  {
+    title: "Holiday",
+    file: "music/holiday.mp3",
+    type: "file"
+  },
+  {
+    title: "Coffee House",
+    file: "music/coffehouse.mp3",
+    type: "file"
+  },
+  {
+    title: "Vaporwave",
+    file: "music/vaporwave.mp3",
+    type: "file"
+  },
+  {
+    title: "WSKB Live Stream",
+    file: "https://wskb.westfield.ma.edu/stream",
+    type: "stream"
+  }
 ];
 
 /* ============================================================
-   IMAGE LIST — 15 (or however many) background images.
-   Paths are relative to this HTML file (the /images folder).
-   They loop in order and gently crossfade.
+   IMAGE LIST
+
+   Paths are relative to this HTML file.
+   Images loop in order and gently crossfade.
    ============================================================ */
+
 const IMAGES = [
-  "images/image1.jpg",
+  "images/image1.jpg"
   // "images/slide-02.jpg",
-  // "images/slide-03.jpg",
-  // ...add up to 15
+  // "images/slide-03.jpg"
 ];
 
-const SLIDE_DISPLAY_MS = 8000; // how long each image stays fully visible before crossfading
+const SLIDE_DISPLAY_MS = 8000;
+const CONTROL_HIDE_MS = 10000;
 
 /* ============================================================ */
 
-const player = document.getElementById('player');
-const playBtn = document.getElementById('playBtn');
-const playIcon = document.getElementById('playIcon');
-const trackSelect = document.getElementById('trackSelect');
-const controls = document.getElementById('controls');
-const bgA = document.getElementById('bgA');
-const bgB = document.getElementById('bgB');
-const bgEmpty = document.getElementById('bgEmpty');
+const player = document.getElementById("player");
+const playBtn = document.getElementById("playBtn");
+const playIcon = document.getElementById("playIcon");
+const trackSelect = document.getElementById("trackSelect");
+const durationTimer = document.getElementById("durationTimer");
+const controls = document.getElementById("controls");
+
+const bgA = document.getElementById("bgA");
+const bgB = document.getElementById("bgB");
+const bgEmpty = document.getElementById("bgEmpty");
+
+const visualizer = document.getElementById("visualizer");
+const visualizerContext = visualizer.getContext("2d");
 
 const ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
-const ICON_PAUSE = '<path d="M6 5h4v14H6zm8 0h4v14h-4z"/>';
+const ICON_PAUSE =
+  '<path d="M6 5h4v14H6zm8 0h4v14h-4z"/>';
 
 let currentIndex = -1;
+let playbackStartedAt = null;
+let accumulatedPlaybackSeconds = 0;
+let timerAnimationFrame = null;
 
 /* ---------------- music ---------------- */
 
 function buildTrackSelect(){
-  trackSelect.innerHTML = '';
+  trackSelect.innerHTML = "";
+
   if(TRACKS.length === 0){
-    const opt = document.createElement('option');
-    opt.textContent = 'No tracks loaded';
-    trackSelect.appendChild(opt);
+    const option = document.createElement("option");
+    option.textContent = "No tracks loaded";
+
+    trackSelect.appendChild(option);
     trackSelect.disabled = true;
     playBtn.disabled = true;
+
     return;
   }
-  TRACKS.forEach((t, i) => {
-    const opt = document.createElement('option');
-    opt.value = i;
-    opt.textContent = t.title;
-    trackSelect.appendChild(opt);
+
+  TRACKS.forEach((track, index) => {
+    const option = document.createElement("option");
+
+    option.value = index;
+    option.textContent = track.title;
+
+    trackSelect.appendChild(option);
   });
 }
 
-function loadTrack(i, autoplay){
-  if(i < 0 || i >= TRACKS.length) return;
-  currentIndex = i;
-  const t = TRACKS[i];
-  player.src = t.file;
-  player.loop = true;
-  trackSelect.value = i;
-  if(autoplay){
-    player.currentTime = 0;
-    player.play().catch(()=>{});
+function loadTrack(index, autoplay = false){
+  if(index < 0 || index >= TRACKS.length){
+    return;
+  }
+
+  currentIndex = index;
+
+  const track = TRACKS[index];
+  const wasPlaying = !player.paused;
+
+  player.pause();
+  player.removeAttribute("src");
+  player.load();
+
+  resetPlaybackTimer();
+
+  player.src = track.file;
+  player.loop = track.type !== "stream";
+  trackSelect.value = String(index);
+
+  if(autoplay || wasPlaying){
+    startPlayback();
+  }
+}
+
+async function startPlayback(){
+  if(currentIndex === -1){
+    loadTrack(0, false);
+  }
+
+  initializeAudioVisualizer();
+
+  try{
+    await player.play();
+  }catch(error){
+    console.warn("Playback could not start:", error);
   }
 }
 
 function togglePlay(){
-  if(TRACKS.length === 0) return;
-  if(currentIndex === -1){
-    loadTrack(0, true);
+  if(TRACKS.length === 0){
     return;
   }
-  if(player.paused){ player.play().catch(()=>{}); }
-  else{ player.pause(); }
+
+  if(currentIndex === -1){
+    loadTrack(0, false);
+    startPlayback();
+    return;
+  }
+
+  if(player.paused){
+    startPlayback();
+  }else{
+    player.pause();
+  }
 }
 
-player.addEventListener('play', () => { playIcon.innerHTML = ICON_PAUSE; });
-player.addEventListener('pause', () => { playIcon.innerHTML = ICON_PLAY; });
+player.addEventListener("play", () => {
+  playIcon.innerHTML = ICON_PAUSE;
+  playBtn.setAttribute("aria-label", "Pause");
 
-playBtn.addEventListener('click', () => {
+  startPlaybackTimer();
+  startVisualizer();
+});
+
+player.addEventListener("pause", () => {
+  playIcon.innerHTML = ICON_PLAY;
+  playBtn.setAttribute("aria-label", "Play");
+
+  pausePlaybackTimer();
+});
+
+player.addEventListener("ended", () => {
+  playIcon.innerHTML = ICON_PLAY;
+  playBtn.setAttribute("aria-label", "Play");
+
+  pausePlaybackTimer();
+});
+
+player.addEventListener("error", () => {
+  console.warn(
+    "The selected audio source could not be loaded.",
+    player.error
+  );
+
+  playIcon.innerHTML = ICON_PLAY;
+  playBtn.setAttribute("aria-label", "Play");
+
+  pausePlaybackTimer();
+});
+
+playBtn.addEventListener("click", () => {
   togglePlay();
   resetHideTimer();
 });
 
-trackSelect.addEventListener('change', () => {
+trackSelect.addEventListener("change", () => {
   loadTrack(Number(trackSelect.value), true);
+  resetHideTimer();
 });
-trackSelect.addEventListener('focus', () => { clearTimeout(hideTimer); });
-trackSelect.addEventListener('blur', () => { resetHideTimer(); });
 
-document.addEventListener('keydown', (e) => {
-  if(e.code === 'Space' && e.target === document.body){
-    e.preventDefault();
+trackSelect.addEventListener("focus", () => {
+  clearTimeout(hideTimer);
+});
+
+trackSelect.addEventListener("blur", () => {
+  resetHideTimer();
+});
+
+document.addEventListener("keydown", event => {
+  if(
+    event.code === "Space" &&
+    event.target === document.body
+  ){
+    event.preventDefault();
     togglePlay();
     resetHideTimer();
   }
 });
+
+/* ---------------- playback timer ---------------- */
+
+function formatTime(totalSeconds){
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+
+  if(hours > 0){
+    return [
+      String(hours).padStart(2, "0"),
+      String(minutes).padStart(2, "0"),
+      String(remainingSeconds).padStart(2, "0")
+    ].join(":");
+  }
+
+  return [
+    String(minutes).padStart(2, "0"),
+    String(remainingSeconds).padStart(2, "0")
+  ].join(":");
+}
+
+function getElapsedPlaybackSeconds(){
+  let elapsed = accumulatedPlaybackSeconds;
+
+  if(playbackStartedAt !== null){
+    elapsed += (performance.now() - playbackStartedAt) / 1000;
+  }
+
+  return elapsed;
+}
+
+function updatePlaybackTimer(){
+  durationTimer.textContent =
+    formatTime(getElapsedPlaybackSeconds());
+
+  if(!player.paused){
+    timerAnimationFrame =
+      requestAnimationFrame(updatePlaybackTimer);
+  }
+}
+
+function startPlaybackTimer(){
+  if(playbackStartedAt === null){
+    playbackStartedAt = performance.now();
+  }
+
+  cancelAnimationFrame(timerAnimationFrame);
+  updatePlaybackTimer();
+}
+
+function pausePlaybackTimer(){
+  if(playbackStartedAt !== null){
+    accumulatedPlaybackSeconds +=
+      (performance.now() - playbackStartedAt) / 1000;
+
+    playbackStartedAt = null;
+  }
+
+  cancelAnimationFrame(timerAnimationFrame);
+
+  durationTimer.textContent =
+    formatTime(accumulatedPlaybackSeconds);
+}
+
+function resetPlaybackTimer(){
+  cancelAnimationFrame(timerAnimationFrame);
+
+  playbackStartedAt = null;
+  accumulatedPlaybackSeconds = 0;
+  durationTimer.textContent = "00:00";
+}
+
+/* ---------------- audio visualizer ---------------- */
+
+let audioContext = null;
+let analyser = null;
+let audioSource = null;
+let frequencyData = null;
+let visualizerAnimationFrame = null;
+let visualizerInitialized = false;
+
+function initializeAudioVisualizer(){
+  if(visualizerInitialized){
+    if(audioContext && audioContext.state === "suspended"){
+      audioContext.resume().catch(() => {});
+    }
+
+    return;
+  }
+
+  const AudioContextClass =
+    window.AudioContext || window.webkitAudioContext;
+
+  if(!AudioContextClass){
+    console.warn("Web Audio API is not supported.");
+    return;
+  }
+
+  try{
+    audioContext = new AudioContextClass();
+
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.84;
+    analyser.minDecibels = -90;
+    analyser.maxDecibels = -10;
+
+    audioSource =
+      audioContext.createMediaElementSource(player);
+
+    audioSource.connect(analyser);
+    analyser.connect(audioContext.destination);
+
+    frequencyData =
+      new Uint8Array(analyser.frequencyBinCount);
+
+    visualizerInitialized = true;
+
+    if(audioContext.state === "suspended"){
+      audioContext.resume().catch(() => {});
+    }
+  }catch(error){
+    console.warn(
+      "The audio visualizer could not be initialized:",
+      error
+    );
+  }
+}
+
+function resizeVisualizer(){
+  const pixelRatio = window.devicePixelRatio || 1;
+
+  visualizer.width =
+    Math.floor(window.innerWidth * pixelRatio);
+
+  visualizer.height =
+    Math.floor(window.innerHeight * pixelRatio);
+
+  visualizer.style.width = `${window.innerWidth}px`;
+  visualizer.style.height = `${window.innerHeight}px`;
+
+  visualizerContext.setTransform(
+    pixelRatio,
+    0,
+    0,
+    pixelRatio,
+    0,
+    0
+  );
+}
+
+function startVisualizer(){
+  if(!visualizerInitialized || !analyser){
+    return;
+  }
+
+  cancelAnimationFrame(visualizerAnimationFrame);
+  drawVisualizer();
+}
+
+function drawVisualizer(){
+  visualizerAnimationFrame =
+    requestAnimationFrame(drawVisualizer);
+
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+
+  visualizerContext.clearRect(0, 0, width, height);
+
+  if(!analyser || !frequencyData){
+    return;
+  }
+
+  analyser.getByteFrequencyData(frequencyData);
+
+  const barCount = Math.min(72, frequencyData.length);
+  const gap = 5;
+  const totalGapWidth = gap * (barCount - 1);
+  const barWidth = Math.max(
+    2,
+    (width - totalGapWidth) / barCount
+  );
+
+  const maximumBarHeight = height * .58;
+  const baseY = height;
+
+  for(let index = 0; index < barCount; index++){
+    const dataIndex = Math.floor(
+      index * frequencyData.length / barCount
+    );
+
+    const strength = frequencyData[dataIndex] / 255;
+    const easedStrength = Math.pow(strength, 1.45);
+
+    const minimumHeight = 3;
+    const barHeight = Math.max(
+      minimumHeight,
+      easedStrength * maximumBarHeight
+    );
+
+    const x = index * (barWidth + gap);
+    const y = baseY - barHeight;
+
+    const gradient =
+      visualizerContext.createLinearGradient(
+        0,
+        y,
+        0,
+        baseY
+      );
+
+    gradient.addColorStop(
+      0,
+      `rgba(245,185,66,${.12 + strength * .24})`
+    );
+
+    gradient.addColorStop(
+      .55,
+      `rgba(245,185,66,${.06 + strength * .13})`
+    );
+
+    gradient.addColorStop(
+      1,
+      "rgba(245,185,66,0)"
+    );
+
+    visualizerContext.fillStyle = gradient;
+
+    visualizerContext.beginPath();
+
+    if(typeof visualizerContext.roundRect === "function"){
+      visualizerContext.roundRect(
+        x,
+        y,
+        barWidth,
+        barHeight,
+        Math.min(4, barWidth / 2)
+      );
+    }else{
+      visualizerContext.rect(
+        x,
+        y,
+        barWidth,
+        barHeight
+      );
+    }
+
+    visualizerContext.fill();
+  }
+}
+
+window.addEventListener("resize", resizeVisualizer);
 
 /* ---------------- background slideshow ---------------- */
 
@@ -268,13 +779,16 @@ let inactiveLayer = bgB;
 
 function setupSlideshow(){
   if(IMAGES.length === 0){
-    bgEmpty.style.display = 'flex';
+    bgEmpty.style.display = "flex";
     return;
   }
-  bgEmpty.style.display = 'none';
 
-  activeLayer.style.backgroundImage = `url("${IMAGES[0]}")`;
-  activeLayer.classList.add('active');
+  bgEmpty.style.display = "none";
+
+  activeLayer.style.backgroundImage =
+    `url("${IMAGES[0]}")`;
+
+  activeLayer.classList.add("active");
   slideIndex = 0;
 
   if(IMAGES.length > 1){
@@ -283,40 +797,50 @@ function setupSlideshow(){
 }
 
 function advanceSlide(){
-  const nextIndex = (slideIndex + 1) % IMAGES.length;
-  inactiveLayer.style.backgroundImage = `url("${IMAGES[nextIndex]}")`;
-  // force reflow so the browser registers the new background before fading
-  void inactiveLayer.offsetWidth;
-  inactiveLayer.classList.add('active');
-  activeLayer.classList.remove('active');
+  const nextIndex =
+    (slideIndex + 1) % IMAGES.length;
 
-  const tmp = activeLayer;
+  inactiveLayer.style.backgroundImage =
+    `url("${IMAGES[nextIndex]}")`;
+
+  void inactiveLayer.offsetWidth;
+
+  inactiveLayer.classList.add("active");
+  activeLayer.classList.remove("active");
+
+  const previousActiveLayer = activeLayer;
+
   activeLayer = inactiveLayer;
-  inactiveLayer = tmp;
+  inactiveLayer = previousActiveLayer;
   slideIndex = nextIndex;
 }
 
 /* ---------------- auto-hide controls ---------------- */
 
 let hideTimer;
+
 function resetHideTimer(){
   clearTimeout(hideTimer);
-  controls.classList.remove('hidden');
-  document.body.classList.remove('cursor-hidden');
+
+  controls.classList.remove("hidden");
+  document.body.classList.remove("cursor-hidden");
+
   hideTimer = setTimeout(() => {
-    controls.classList.add('hidden');
-    document.body.classList.add('cursor-hidden');
-  }, 10000);
+    controls.classList.add("hidden");
+    document.body.classList.add("cursor-hidden");
+  }, CONTROL_HIDE_MS);
 }
 
-['mousemove','touchstart','keydown'].forEach(evt => {
-  document.addEventListener(evt, resetHideTimer);
+["mousemove", "touchstart", "keydown"].forEach(eventName => {
+  document.addEventListener(eventName, resetHideTimer);
 });
 
 /* ---------------- init ---------------- */
 
 buildTrackSelect();
 setupSlideshow();
+resizeVisualizer();
+resetPlaybackTimer();
 resetHideTimer();
 </script>
 
